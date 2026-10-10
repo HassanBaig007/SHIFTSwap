@@ -245,3 +245,25 @@ test('approval revalidation reports certification, rest, and weekly-hour failure
   assert.equal(store.snapshot().listings[0].status, 'CLAIMED')
   assert.equal(store.snapshot().shifts.find((item) => item.id === 'TARGET').assigned_to, 'OWNER')
 })
+
+test('authenticated API derives the actor from JWT and enforces RBAC', async () => {
+  const { app, store } = fixtureApp()
+  process.env.JWT_SECRET = 'test-secret'
+  setFixture(store, [person('OWNER'), person('M', 'MANAGER')], [shift('TARGET', '2026-03-02T07:00', '2026-03-02T15:00', 'OWNER')])
+  store.authenticate = async (username) => store.snapshot().staff.find((item) => item.id.toLowerCase() === username.toLowerCase()) || null
+  store.findStaff = async (staffId) => store.snapshot().staff.find((item) => item.id === staffId) || null
+  const login = await request(app).post('/api/auth/login').send({ username: 'OWNER', password: 'ignored' })
+  assert.equal(login.status, 200)
+  const token = login.body.token
+  const unauthenticated = await request(app).get('/api/bootstrap')
+  assert.equal(unauthenticated.status, 200)
+  const protectedApp = createApp({ store, requireAuthentication: true })
+  assert.equal((await request(protectedApp).get('/api/bootstrap')).status, 401)
+  const staffState = await request(protectedApp).get('/api/bootstrap').set('Authorization', `Bearer ${token}`)
+  assert.equal(staffState.status, 200)
+  const managerLogin = await request(app).post('/api/auth/login').send({ username: 'M', password: 'ignored' })
+  const managerToken = managerLogin.body.token
+  const forbidden = await request(protectedApp).post('/api/listings').set('Authorization', `Bearer ${managerToken}`).send({ shiftId: 'TARGET' })
+  assert.equal(forbidden.status, 400)
+  assert.match(forbidden.body.error, /staff actors/)
+})
