@@ -9,6 +9,7 @@ type Reason = { rule: number; message: string; shiftId?: string }
 type Eligibility = { allowed: boolean; reasons: Reason[] }
 type History = { id: string; actorName: string; action: string; shiftId: string; outcome: string; message: string; timestamp: string }
 type State = { staff: Person[]; shifts: Shift[]; listings: Listing[]; history: History[]; eligibility: Record<string, Eligibility>; actor: Person }
+const API_BASE = import.meta.env.VITE_API_URL || ''
 
 function formatDate(value: string) {
   const [date, time] = value.split('T')
@@ -30,7 +31,7 @@ function App() {
     let cancelled = false
     async function fetchState() {
       try {
-        const response = await fetch('/api/bootstrap', { headers: { Authorization: `Bearer ${token}` } })
+        const response = await fetch(`${API_BASE}/api/bootstrap`, { headers: { Authorization: `Bearer ${token}` } })
         if (!response.ok) throw new Error('Unable to load the ShiftSwap workspace.')
         if (!cancelled) setState(await response.json())
       } catch (error) { if (!cancelled) setFeedback({ kind: 'error', text: (error as Error).message }) }
@@ -42,7 +43,7 @@ function App() {
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFeedback(null)
-    const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) })
+    const response = await fetch(`${API_BASE}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) })
     const data = await response.json()
     if (!response.ok) return setFeedback({ kind: 'error', text: data.error })
     localStorage.setItem('shiftswap-token', data.token)
@@ -52,7 +53,7 @@ function App() {
   async function perform(path: string, key: string, body: Record<string, string> = {}) {
     setBusy(key); setFeedback(null)
     try {
-      const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
+      const response = await fetch(`${API_BASE}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) })
       const data = await response.json()
       if (!response.ok) {
         const detail = data.reasons?.map((reason: Reason) => `Rule ${reason.rule}: ${reason.message}`).join(' ') || data.error
